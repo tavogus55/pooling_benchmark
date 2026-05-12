@@ -3,10 +3,11 @@ import numpy as np
 import time
 import warnings
 from torch_geometric.datasets import TUDataset
+import torch_geometric.transforms as T
 import torch
 from utils import *
 from torch_geometric.data import DataLoader
-from pooling_models import HierarchicalGCN_TOPK
+from pooling_models import *
 from trainers import train, test
 
 args = get_args()
@@ -15,11 +16,22 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 warnings.filterwarnings("ignore")
 max_nodes = 500
 data_path = "data"
-dataset_sparse = TUDataset(root=data_path, name=args.dataset, pre_filter=lambda data: data.num_nodes <= max_nodes, use_node_attr=True)
+if args.dataset == "COLLAB":
+    dataset_sparse = TUDataset(root=data_path, name="COLLAB", transform=T.Compose([T.OneHotDegree(491)]),
+                               use_node_attr=True)
+    pool_ratio = 0.7
+elif args.dataset == "IMDB-MULTI":
+    dataset_sparse = TUDataset(root=data_path, name="IMDB-MULTI", transform=T.Compose([T.OneHotDegree(88)]),
+                               use_node_attr=True)
+    pool_ratio = 0.9
+else:
+    dataset_sparse = TUDataset(root=data_path, name=args.dataset, pre_filter=lambda data: data.num_nodes <= max_nodes, use_node_attr=True)
+    pool_ratio = 0.3
 num_classes = dataset_sparse.num_classes
 in_channels = dataset_sparse.num_features
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = HierarchicalGCN_TOPK(in_channels=dataset_sparse.num_features, hidden_channels=64,out_channels=64, num_classes=dataset_sparse.num_classes).to(device)
+model = HierarchicalGCN_TOPK(in_channels=dataset_sparse.num_features, hidden_channels=64,out_channels=64, num_classes=dataset_sparse.num_classes,
+                             pool_ratio=pool_ratio).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 criterion = torch.nn.CrossEntropyLoss()
 
@@ -47,12 +59,18 @@ for seed in seeds:
     train_loader = DataLoader(train_dataset, batch_size=512, shuffle=True)
     valid_loader = DataLoader(val_dataset, batch_size=512, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
-    model = HierarchicalGCN_TOPK(in_channels=dataset_sparse.num_features, hidden_channels=64,out_channels=64, num_classes=dataset_sparse.num_classes).to(device)
+    if args.model == "topk":
+        model = HierarchicalGCN_TOPK(in_channels=dataset_sparse.num_features, hidden_channels=64,out_channels=64,
+                                 num_classes=dataset_sparse.num_classes, pool_ratio=pool_ratio).to(device)
+    elif args.model == "sag":
+        model = HierarchicalGCN_SAG(in_channels=dataset_sparse.num_features, hidden_channels=64, out_channels=64,
+                                    num_classes=dataset_sparse.num_classes, pool_ratio=pool_ratio).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     start_time = time.time()
     best_val_acc = 0
     epochs_no_improve = 0
     for epoch in range(1, 201):
+        print(f"Current epoch: {epoch}")
         loss = train(model, optimizer, train_loader, device)
         val_acc = test(valid_loader, model, device)
         test_acc = test(test_loader, model, device)

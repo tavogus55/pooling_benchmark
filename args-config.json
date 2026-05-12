@@ -1,13 +1,13 @@
 {
   "model": {
     "type": "str",
-    "choices": ["topk"],
+    "choices": ["topk", "sag"],
     "required": true,
     "help": "Pooling model to use"
   },
   "dataset": {
     "type": "str",
-    "choices": ["MUTAG", "DD", "IMDB-MULTI"],
+    "choices": ["MUTAG", "DD", "IMDB-MULTI", "PROTEINS", "COLLAB"],
     "required": true,
     "help": "Dataset to use"
   },
