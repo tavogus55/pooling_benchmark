@@ -9,7 +9,7 @@ import torch_geometric.transforms as T
 import torch
 from utils import *
 from torch_geometric.data import DataLoader
-from pooling_models import *
+from sparse_pooling_models import *
 from trainers import train, test
 
 args = get_args()
