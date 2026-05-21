@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-from dense_pooling_models import Net_Diff, Net_mincut
+from dense_pooling_models import Net_Diff, Net_mincut, Net_DMoN
 from dense_trainers import train, test
 from utils import get_args, get_logger, log_experiment_settings
 
@@ -73,6 +73,8 @@ if args.model == "diff":
     model = Net_Diff(dataset_dense.num_features, dataset_dense.num_classes).to(device)
 elif args.model == "mincut":
     model = Net_mincut(dataset_dense.num_features, dataset_dense.num_classes).to(device)
+elif args.model == "dmon":
+    model = Net_DMoN(dataset_dense.num_features, dataset_dense.num_classes).to(device)
 else:
     raise Exception("invalid model")
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)

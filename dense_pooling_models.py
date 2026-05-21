@@ -215,7 +215,7 @@ import torch.nn.functional as F
 
 
 from torch_geometric.loader import DenseDataLoader
-from torch_geometric.nn import DenseGCNConv, dense_diff_pool
+from torch_geometric.nn import DenseGCNConv, dense_diff_pool, DMoNPooling
 
 import torch
 import torch.nn.functional as F
@@ -363,3 +363,30 @@ class Net_mincut(torch.nn.Module):
         x = self.lin1(x).relu()
         x = self.lin2(x)
         return F.log_softmax(x, dim=-1), l1 + l2, e1 + e2
+
+class Net_DMoN(torch.nn.Module):
+    def __init__(self, num_features, num_classes, hidden_channels=64):
+        super().__init__()
+        num_nodes = 64
+        self.gnn1_pool = GNN(num_features, 64, num_nodes)
+        self.pool1 = DMoNPooling([hidden_channels, hidden_channels], 8)
+        num_nodes = 64
+        self.gnn2_pool = GNN(64, 64, num_nodes)
+        self.pool2 = DMoNPooling([hidden_channels, hidden_channels], 8)
+        self.gnn1_embed = DenseGCNConv(num_features, 64)
+        self.gnn2_embed = DenseGCNConv(64, 64)
+        self.gnn3_embed = DenseGCNConv(64, 64)
+        self.lin1 = torch.nn.Linear(64, 32)
+        self.lin2 = torch.nn.Linear(32, num_classes)
+    def forward(self, x, adj, mask=None):
+        s = self.gnn1_pool(x, adj, mask)
+        x = self.gnn1_embed(x, adj, mask)
+        _, x, adj, sp1, o1, c1 = self.pool1(x, adj, mask)
+        s = self.gnn2_pool(x, adj)
+        x = self.gnn2_embed(x, adj)
+        _, x, adj, sp2, o2, c2 = self.pool2(x, adj)
+        x = self.gnn3_embed(x, adj)
+        x = x.mean(dim=1)
+        x = self.lin1(x).relu()
+        x = self.lin2(x)
+        return F.log_softmax(x, dim=-1), sp1 + sp2 + o1 + o2 + c1 + c2
