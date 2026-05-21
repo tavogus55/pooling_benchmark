@@ -1,7 +1,7 @@
 {
   "model": {
     "type": "str",
-    "choices": ["topk", "sag", "asap", "cop", "cgi", "kmis", "gsa", "hgpsl", "diff", "mincut", "dmon"],
+    "choices": ["topk", "sag", "asap", "cop", "cgi", "kmis", "gsa", "hgpsl", "diff", "mincut", "dmon", "hosc"],
     "required": true,
     "help": "Pooling model to use"
   },

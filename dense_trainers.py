@@ -7,7 +7,10 @@ def train(model, train_loader, optimizer, device):
     for data in train_loader:
         data = data.to(device)
         optimizer.zero_grad()
-        output, _, _ = model(data.x, data.adj, data.mask)
+        try:
+            output, _, _ = model(data.x, data.adj, data.mask)
+        except ValueError:
+            output = model(data.x, data.adj, data.mask)
         loss = F.nll_loss(output, data.y.view(-1))
         loss.backward()
         total_loss += data.y.size(0) * float(loss)
@@ -18,7 +21,10 @@ def test(model, loader, device):
     correct = 0
     for data in loader:
         data = data.to(device)
-        output, _, _ = model(data.x, data.adj, data.mask)
+        try:
+            output, _, _ = model(data.x, data.adj, data.mask)
+        except ValueError:
+            output = model(data.x, data.adj, data.mask)
         pred = output.max(dim=1)[1]
         correct += int(pred.eq(data.y.view(-1)).sum())
     return correct / len(loader.dataset)
