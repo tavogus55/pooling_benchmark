@@ -10,7 +10,7 @@ import torch
 from utils import *
 from torch_geometric.data import DataLoader
 from sparse_pooling_models import *
-from trainers import train, test
+from sparse_trainer import train, test
 
 args = get_args()
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

@@ -1,5 +1,6 @@
 import torch.nn.functional as F
 
+
 def train(model, optimizer, train_loader, device):
     model.train()
     total_loss = 0

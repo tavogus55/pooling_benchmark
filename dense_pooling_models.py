@@ -307,3 +307,31 @@ class Net_AsymCheegerCut(torch.nn.Module):
         x = self.lin1(x).relu()
         x = self.lin2(x)
         return F.log_softmax(x, dim=1)
+
+class Net_Diff(torch.nn.Module):
+    def __init__(self, num_features, num_classes):
+        super().__init__()
+        num_nodes = 64
+        self.gnn1_pool = GNN(num_features, 64, num_nodes)
+        self.gnn1_embed = DenseGCNConv(num_features, 64)
+        num_nodes = 64
+        self.gnn2_pool = GNN(64, 64, num_nodes)
+        self.gnn2_embed = DenseGCNConv(64, 64)
+        self.gnn3_embed = DenseGCNConv(64, 64)
+        self.lin1 = torch.nn.Linear(64, 32)
+        self.lin2 = torch.nn.Linear(32, num_classes)
+    def forward(self, x, adj, mask=None):
+        s = self.gnn1_pool(x, adj, mask)
+        x = self.gnn1_embed(x, adj, mask)
+        x = F.relu(x)
+        x, adj, l1, e1 = dense_diff_pool(x, adj, s, mask)
+        s = self.gnn2_pool(x, adj)
+        x = self.gnn2_embed(x, adj)
+        x = F.relu(x)
+        x, adj, l2, e2 = dense_diff_pool(x, adj, s)
+        x = self.gnn3_embed(x, adj)
+        x = F.relu(x)
+        x = x.mean(dim=1)
+        x = self.lin1(x).relu()
+        x = self.lin2(x)
+        return F.log_softmax(x, dim=-1), l1 + l2, e1 + e2
