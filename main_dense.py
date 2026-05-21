@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-from dense_pooling_models import Net_Diff
+from dense_pooling_models import Net_Diff, Net_mincut
 from dense_trainers import train, test
 from utils import get_args, get_logger, log_experiment_settings
 
@@ -61,7 +61,7 @@ if args.dataset == "PROTEINS":
         pre_filter=lambda data: data.num_nodes <= max_nodes,
     )
 else:
-    raise Exception("wrong dataset")
+    raise Exception("invalid dataset")
 
 if torch.cuda.is_available():
     device = torch.device('cuda')
@@ -69,7 +69,12 @@ elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
     device = torch.device('mps')
 else:
     device = torch.device('cpu')
-model = Net_Diff(dataset_dense.num_features, dataset_dense.num_classes).to(device)
+if args.model == "diff":
+    model = Net_Diff(dataset_dense.num_features, dataset_dense.num_classes).to(device)
+elif args.model == "mincut":
+    model = Net_mincut(dataset_dense.num_features, dataset_dense.num_classes).to(device)
+else:
+    raise Exception("invalid model")
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
 
@@ -87,7 +92,7 @@ times = []
 memories = []
 best_val_accs = []
 best_test_accs = []
-early_stop_patience = args.ealy_stop
+early_stop_patience = args.early_stop
 tolerance = args.tolerance
 for seed in seeds:
     set_seed(seed)
@@ -105,7 +110,6 @@ for seed in seeds:
     train_loader = DenseDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     valid_loader = DenseDataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     test_loader = DenseDataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
-    model = Net_Diff(dataset_dense.num_features, dataset_dense.num_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     start_time = time.time()
     best_val_acc = 0

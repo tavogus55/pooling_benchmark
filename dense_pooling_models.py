@@ -27,7 +27,7 @@ from torch_geometric.datasets import TUDataset
 from sklearn.metrics import r2_score
 from torch_geometric.data import DataLoader
 from torch_geometric.datasets import MoleculeNet
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, dense_mincut_pool
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
 from torch_geometric.utils import to_networkx
 from torch.nn import Linear
@@ -329,6 +329,34 @@ class Net_Diff(torch.nn.Module):
         x = self.gnn2_embed(x, adj)
         x = F.relu(x)
         x, adj, l2, e2 = dense_diff_pool(x, adj, s)
+        x = self.gnn3_embed(x, adj)
+        x = F.relu(x)
+        x = x.mean(dim=1)
+        x = self.lin1(x).relu()
+        x = self.lin2(x)
+        return F.log_softmax(x, dim=-1), l1 + l2, e1 + e2
+
+class Net_mincut(torch.nn.Module):
+    def __init__(self, num_features, num_classes):
+        super().__init__()
+        num_nodes = 64
+        self.gnn1_pool = GNN(num_features, 64, num_nodes)
+        self.gnn1_embed = DenseGCNConv(num_features, 64)
+        num_nodes = 64
+        self.gnn2_pool = GNN(64, 64, num_nodes)
+        self.gnn2_embed = DenseGCNConv(64, 64)
+        self.gnn3_embed = DenseGCNConv(64, 64)
+        self.lin1 = torch.nn.Linear(64, 32)
+        self.lin2 = torch.nn.Linear(32, num_classes)
+    def forward(self, x, adj, mask=None):
+        s = self.gnn1_pool(x, adj, mask)
+        x = self.gnn1_embed(x, adj, mask)
+        x = F.relu(x)
+        x, adj, l1, e1 = dense_mincut_pool(x, adj, s, mask, temp=2)
+        s = self.gnn2_pool(x, adj)
+        x = self.gnn2_embed(x, adj)
+        x = F.relu(x)
+        x, adj, l2, e2 = dense_mincut_pool(x, adj, s, temp=2)
         x = self.gnn3_embed(x, adj)
         x = F.relu(x)
         x = x.mean(dim=1)
