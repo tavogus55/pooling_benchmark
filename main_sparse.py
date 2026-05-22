@@ -97,6 +97,12 @@ for seed in seeds:
     elif args.model == "hgpsl":
         model = HierarchicalGCN_HGPSL(in_channels=dataset_sparse.num_features, hidden_channels=64, out_channels=64,
                                       num_classes=dataset_sparse.num_classes, pool_ratio=args.pratio).to(device)
+    elif args.model == "ndp":
+        model = HierarchicalGCN_NDP(in_channels=dataset_sparse.num_features, hidden_channels=64, out_channels=64,
+                                      num_classes=dataset_sparse.num_classes, pool_ratio=args.pratio).to(device)
+    elif args.model == "graclus":
+        model = HierarchicalGCN_GRACLUS(in_channels=dataset_sparse.num_features, hidden_channels=64, out_channels=64,
+                                      num_classes=dataset_sparse.num_classes).to(device)
     else:
         raise Exception("Incorrect model")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)

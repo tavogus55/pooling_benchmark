@@ -23,6 +23,8 @@ from torch_geometric.nn.dense import Linear
 Scorer = Callable[[Tensor, Adj, OptTensor, OptTensor], Tensor]
 from torch.nn import Linear
 from torch_geometric.utils import softmax
+from torch_geometric.nn.pool import graclus
+from torch_scatter import scatter_mean
 
 
 class HierarchicalGCN_TOPK(torch.nn.Module):
@@ -1089,3 +1091,237 @@ class Net_Diff(torch.nn.Module):
         x = self.lin1(x).relu()
         x = self.lin2(x)
         return F.log_softmax(x, dim=-1), l1 + l2, e1 + e2
+
+class DecimationPool(torch.nn.Module):
+    def __init__(self, ratio=0.5):
+        super(DecimationPool, self).__init__()
+        self.ratio = ratio
+
+    def forward(self, x, edge_index, batch=None):
+
+        if batch is None:
+            batch = edge_index.new_zeros(x.size(0))
+
+        num_nodes = x.size(0)
+
+        # If graph has no edges, skip pooling
+        if edge_index.numel() == 0:
+            perm = torch.arange(num_nodes, device=x.device)
+
+            return x, edge_index, batch, perm
+
+        mis = maximal_independent_set(edge_index)
+
+        perm = mis.nonzero(as_tuple=False).view(-1)
+
+        # Safety fallback
+        if perm.numel() == 0:
+            perm = torch.arange(
+                min(1, num_nodes),
+                device=x.device
+            )
+
+        # Ratio truncation
+        if self.ratio is not None:
+            num_keep = max(1, int(num_nodes * self.ratio))
+            perm = perm[:num_keep]
+
+        x = x[perm]
+        batch = batch[perm]
+
+        edge_index, _ = filter_adj(
+            edge_index,
+            None,
+            perm,
+            num_nodes=num_nodes
+        )
+
+        return x, edge_index, batch, perm
+
+class HierarchicalGCN_NDP(torch.nn.Module):
+    def __init__(self,
+                 in_channels,
+                 hidden_channels,
+                 out_channels,
+                 num_classes,
+                 pool_ratio):
+        super(HierarchicalGCN_NDP, self).__init__()
+
+        self.conv1 = GCNConv(in_channels, hidden_channels)
+        self.bn1 = torch.nn.BatchNorm1d(hidden_channels)
+
+        self.pool1 = DecimationPool(ratio=pool_ratio)
+
+        self.conv2 = GCNConv(hidden_channels, hidden_channels)
+        self.bn2 = torch.nn.BatchNorm1d(hidden_channels)
+
+        self.pool2 = DecimationPool(ratio=pool_ratio)
+
+        self.conv3 = GCNConv(hidden_channels, out_channels)
+        self.bn3 = torch.nn.BatchNorm1d(out_channels)
+
+        self.lin1 = torch.nn.Linear(out_channels, 32)
+        self.lin2 = torch.nn.Linear(32, num_classes)
+
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        # Block 1
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+
+        x, edge_index, batch, perm = self.pool1(
+            x,
+            edge_index,
+            batch
+        )
+
+        # Block 2
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
+
+        x, edge_index, batch, perm = self.pool2(
+            x,
+            edge_index,
+            batch
+        )
+
+        # Block 3
+        x = self.conv3(x, edge_index)
+        x = F.relu(x)
+
+        # Readout
+        x, mask = to_dense_batch(x, batch)
+        x = x.mean(dim=1)
+
+        x = self.lin1(x).relu()
+        x = self.lin2(x)
+
+        return F.log_softmax(x, dim=-1)
+
+
+
+
+class GraclusPooling(torch.nn.Module):
+    def __init__(self):
+        super(GraclusPooling, self).__init__()
+
+    def forward(self, x, edge_index, batch=None, edge_attr=None):
+
+        if batch is None:
+            batch = edge_index.new_zeros(x.size(0))
+
+        num_nodes = x.size(0)
+
+        # Handle empty graph
+        if edge_index.numel() == 0:
+            perm = torch.arange(num_nodes, device=x.device)
+
+            return x, edge_index, batch, perm
+
+        # Compute clusters
+        cluster = graclus(
+            edge_index,
+            weight=edge_attr,
+            num_nodes=num_nodes
+        )
+
+        # Pool node features
+        x = scatter_mean(
+            x,
+            cluster,
+            dim=0
+        )
+
+        # Pool batch assignments
+        batch = scatter_mean(
+            batch.float(),
+            cluster,
+            dim=0
+        ).long()
+
+        # Build pooled adjacency
+        row, col = edge_index
+
+        edge_index = torch.stack([
+            cluster[row],
+            cluster[col]
+        ], dim=0)
+
+        # Remove duplicate edges
+        edge_index, _ = coalesce(
+            edge_index,
+            None,
+            x.size(0),
+            x.size(0)
+        )
+
+        perm = cluster
+
+        return x, edge_index, batch, perm
+
+
+class HierarchicalGCN_GRACLUS(torch.nn.Module):
+    def __init__(self,
+                 in_channels,
+                 hidden_channels,
+                 out_channels,
+                 num_classes):
+        super(HierarchicalGCN_GRACLUS, self).__init__()
+
+        self.conv1 = GCNConv(in_channels, hidden_channels)
+        self.bn1 = torch.nn.BatchNorm1d(hidden_channels)
+
+        self.pool1 = GraclusPooling()
+
+        self.conv2 = GCNConv(hidden_channels, hidden_channels)
+        self.bn2 = torch.nn.BatchNorm1d(hidden_channels)
+
+        self.pool2 = GraclusPooling()
+
+        self.conv3 = GCNConv(hidden_channels, out_channels)
+        self.bn3 = torch.nn.BatchNorm1d(out_channels)
+
+        self.lin1 = torch.nn.Linear(out_channels, 32)
+        self.lin2 = torch.nn.Linear(32, num_classes)
+
+    def forward(self, data):
+
+        x, edge_index, batch = (
+            data.x,
+            data.edge_index,
+            data.batch
+        )
+
+        # Block 1
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+
+        x, edge_index, batch, perm = self.pool1(
+            x,
+            edge_index,
+            batch
+        )
+
+        # Block 2
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
+
+        x, edge_index, batch, perm = self.pool2(
+            x,
+            edge_index,
+            batch
+        )
+
+        # Block 3
+        x = self.conv3(x, edge_index)
+        x = F.relu(x)
+
+        # Readout
+        x, mask = to_dense_batch(x, batch)
+        x = x.mean(dim=1)
+
+        x = self.lin1(x).relu()
+        x = self.lin2(x)
+
+        return F.log_softmax(x, dim=-1)
