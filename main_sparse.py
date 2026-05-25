@@ -10,7 +10,7 @@ import torch
 from utils import *
 from torch_geometric.data import DataLoader
 from sparse_pooling_models import *
-from sparse_trainer import train, test, train_ogb, test_ogb
+from sparse_trainers import train, test, train_ogb, test_ogb
 from ogb.graphproppred import PygGraphPropPredDataset, Evaluator
 
 args = get_args()
@@ -61,6 +61,15 @@ best_val_accs = []
 best_test_accs = []
 early_stop_patience = args.early_stop
 tolerance = args.tolerance
+
+# Read JSON file
+with open("dataset_config.json", "r") as f:
+    DATASET_CONFIGS = json.load(f)
+
+# Example access
+cfg = DATASET_CONFIGS[args.dataset]
+
+
 for seed in seeds:
     set_seed(seed)
     dataset_sparse = dataset_sparse.shuffle()
@@ -85,8 +94,10 @@ for seed in seeds:
     valid_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
     if args.model == "topk":
-        model = HierarchicalGCN_TOPK(in_channels=dataset_sparse.num_features, hidden_channels=64,out_channels=64,
-                                 num_classes=dataset_sparse.num_classes, pool_ratio=args.pratio).to(device)
+        model = HierarchicalGCN_TOPK(in_channels=dataset_sparse.num_features, hidden_channels=cfg["hidden_channels"],
+                                     out_channels=cfg["out_channels"], mlp_hidden=cfg["mlp_hidden"],
+                                     num_classes=dataset_sparse.num_classes,pool_ratio=args.pratio,
+                                     dataset_name=args.dataset).to(device)
     elif args.model == "sag":
         model = HierarchicalGCN_SAG(in_channels=dataset_sparse.num_features, hidden_channels=64, out_channels=64,
                                     num_classes=dataset_sparse.num_classes, pool_ratio=args.pratio).to(device)
